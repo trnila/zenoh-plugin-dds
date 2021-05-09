@@ -13,19 +13,19 @@ use crate::coders::{Coder, Writer};
 use serde_derive::{Deserialize, Serialize};
 use cdr::{CdrLe, Infinite};
 
-#[derive(Serialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq)]
 struct Time {
     sec: i32,
     nanosec: u32,
 }
 
-#[derive(Serialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq)]
 struct Header {
     stamp: Time,
     frame_id: String,
 }
 
-#[derive(Serialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq)]
 struct Image {
     header: Header,
     height: u32,
@@ -99,6 +99,19 @@ impl GstCoder {
 
 impl Coder for GstCoder {
     fn encode(&self, data: Vec<u8>) {
+        let decoded = cdr::deserialize_from::<_, Image, _>(data.as_slice(), Infinite).unwrap();
+
+        let mut buffer = gst::Buffer::with_size(decoded.data.len()).unwrap();
+        {
+            let buffer = buffer.get_mut().unwrap();
+            buffer.copy_from_slice(0, &decoded.data);
+        }
+
+        self.src.push_buffer(buffer);
+        println!("in encode {}", decoded.data.len());
+    }
+
+    fn decode(&self, data: Vec<u8>) {
         let mut buffer = gst::Buffer::with_size(data.len()).unwrap();
         {
             let buffer = buffer.get_mut().unwrap();
@@ -106,10 +119,6 @@ impl Coder for GstCoder {
         }
 
         self.src.push_buffer(buffer);
-        println!("in");
-    }
-
-    fn decode(&self, data: Vec<u8>) {
-        self.encode(data);
+        println!("in decode");
     }
 }
