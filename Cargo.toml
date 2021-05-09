@@ -39,6 +39,9 @@ libc = "0.2.85"
 clap = "2.33"
 env_logger = "0.8.2"
 regex = "1.4.3"
+gstreamer = "0.16.7"
+gstreamer-video = "0.16.7"
+gstreamer-app = "0.16.5"
 
 [dependencies.async-std]
 version = "1.9.0"

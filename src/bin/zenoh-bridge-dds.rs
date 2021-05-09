@@ -302,12 +302,19 @@ async fn main() {
                         let rkey = ResKey::RName(key);
                         let mut sub = zn.declare_subscriber(&rkey, &sub_info).await.unwrap();
                         let stream = sub.stream();
+
+                        let writer = DDSWriter{
+                           wr, dp, keyless,
+                           ton: topic_name.clone(),
+                           tyn: topic_name.clone(),
+                        };
+                        let decoder = new_encoder(&type_name, Box::new(writer), false);
                         while let Some(d) = stream.next().await {
                             log::trace!("Route data to DDS '{}'", topic_name);
                             let ton = topic_name.clone();
                             let tyn = type_name.clone();
                             unsafe {
-                                let bs = new_encoder(&type_name).decode(d.payload.to_vec());
+                                let bs = decoder.decode(d.payload.to_vec());
                                 // As per the Vec documentation (see https://doc.rust-lang.org/std/vec/struct.Vec.html#method.into_raw_parts)
                                 // the only way to correctly releasing it is to create a vec using from_raw_parts
                                 // and then have its destructor do the cleanup.

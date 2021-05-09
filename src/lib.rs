@@ -11,7 +11,11 @@
 // Contributors:
 //   ADLINK zenoh team, <zenoh@adlink-labs.tech>
 //
+
+#![feature(vec_into_raw_parts)]
+
 pub mod coders;
+pub mod gst_coder;
 
 use async_std::task;
 use cyclors::*;
@@ -21,9 +25,9 @@ use std::mem::MaybeUninit;
 use std::os::raw;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
-use zenoh::net::{RBuf, ResKey, Session};
+use zenoh::net::{ResKey, Session};
 
-use crate::coders::*;
+use crate::coders::{Coder, new_encoder, ZenohWriter};
 
 
 const MAX_SAMPLES: usize = 32;
@@ -244,7 +248,7 @@ pub fn run_discovery(dp: dds_entity_t, tx: Sender<MatchedEntity>) {
 }
 
 unsafe extern "C" fn data_forwarder_listener(dr: dds_entity_t, arg: *mut std::os::raw::c_void) {
-    let pa = arg as *mut (ResKey, Arc<Session>, &Box<Coder>);
+    let pa = arg as *mut (ResKey, Arc<Session>, &Box<dyn Coder>);
     let mut zp: *mut cdds_ddsi_payload = std::ptr::null_mut();
     #[allow(clippy::uninit_assumed_init)]
     let mut si: [dds_sample_info_t; 1] = { MaybeUninit::uninit().assume_init() };
@@ -252,10 +256,7 @@ unsafe extern "C" fn data_forwarder_listener(dr: dds_entity_t, arg: *mut std::os
         if si[0].valid_data {
             log::trace!("Route data to zenoh resource with rid={}", &(*pa).0);
             let bs = Vec::from_raw_parts((*zp).payload, (*zp).size as usize, (*zp).size as usize);
-            task::block_on(async {
-                let out = (*pa).2.encode(bs).await;
-                (*pa).1.write(&(*pa).0, RBuf::from(out)).await;
-            });
+            (*pa).2.encode(bs);
             (*zp).payload = std::ptr::null_mut();
         }
         cdds_serdata_unref(zp as *mut ddsi_serdata);
@@ -270,7 +271,8 @@ pub fn create_forwarding_dds_reader(
     z_key: ResKey,
     z: Arc<Session>,
 ) -> dds_entity_t {
-    let encoder: Box<dyn Coder> = new_encoder(&type_name);
+    let writer = ZenohWriter::new(z.clone(), z_key.clone());
+    let encoder: Box<dyn Coder> = new_encoder(&type_name, Box::new(writer), true);
     let cton = CString::new(topic_name).unwrap().into_raw();
     let ctyn = CString::new(type_name).unwrap().into_raw();
 
