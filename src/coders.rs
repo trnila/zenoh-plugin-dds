@@ -47,6 +47,11 @@ pub struct DDSWriter {
 impl Writer for DDSWriter {
     fn write(&self, buf: &[u8]) {
         unsafe {
+            // As per the Vec documentation (see https://doc.rust-lang.org/std/vec/struct.Vec.html#method.into_raw_parts)
+            // the only way to correctly releasing it is to create a vec using from_raw_parts
+            // and then have its destructor do the cleanup.
+            // Thus, while tempting to just pass the raw pointer to cyclone and then free it from C,
+            // that is not necessarily safe or guaranteed to be leak free.
             let (ptr, len, capacity) = buf.to_vec().into_raw_parts();
             let cton = CString::new(self.ton.clone()).unwrap().into_raw();
             let ctyn = CString::new(self.tyn.clone()).unwrap().into_raw();
@@ -74,7 +79,7 @@ impl Writer for DDSWriter {
 #[async_trait]
 pub trait Coder {
     fn encode(&self, data: Vec<u8>);
-    fn decode(&self, data: Vec<u8>) -> Vec<u8>;
+    fn decode(&self, data: Vec<u8>);
 }
 
 pub fn new_encoder(topic_type: &str, writer: Box<Writer + Send>, encoder: bool) -> Box<dyn Coder + Send> {
@@ -94,10 +99,18 @@ pub fn new_encoder(topic_type: &str, writer: Box<Writer + Send>, encoder: bool) 
                         "queue",
                         "appsink name=sink emit-signals=1"
                 ],
-                false => panic!("not implemented"),
+                false => vec![
+                    "appsrc name=src is-live=true caps=video/x-h264,stream-format=byte-stream,alignment=au",
+                    "queue",
+                    "h264parse",
+                    "avdec_h264",
+                    "videoconvert",
+                    "video/x-raw,format=RGB",
+                    "appsink name=sink emit-signals=1"
+                ],
             };
 
-            Box::new(GstCoder::new(writer, &pipe_description))
+            Box::new(GstCoder::new(writer, &pipe_description, encoder))
         },
         _ => Box::new(IdentityCoder{writer}),
     }
@@ -112,8 +125,8 @@ impl Coder for IdentityCoder {
         self.writer.write(&data);
     }
 
-    fn decode(&self, data: Vec<u8>) -> Vec<u8> {
-        data
+    fn decode(&self, data: Vec<u8>) {
+        self.writer.write(&data);
     }
 }
 
@@ -126,7 +139,9 @@ impl Coder for UpperCoder {
         self.writer.write(str::from_utf8(&data).unwrap().to_uppercase().as_bytes());
     }
 
-    fn decode(&self, data: Vec<u8>) -> Vec<u8> {
-        str::from_utf8(&data).unwrap().to_lowercase().as_bytes().to_vec()
+    fn decode(&self, data: Vec<u8>) {
+        self.writer.write(
+            &str::from_utf8(&data).unwrap().to_lowercase().as_bytes().to_vec()
+        );
     }
 }

@@ -10,7 +10,31 @@ use std::u8;
 use futures::channel::mpsc; 
 use futures::join;
 use crate::coders::{Coder, Writer};
+use serde_derive::{Deserialize, Serialize};
+use cdr::{CdrLe, Infinite};
 
+#[derive(Serialize, PartialEq)]
+struct Time {
+    sec: i32,
+    nanosec: u32,
+}
+
+#[derive(Serialize, PartialEq)]
+struct Header {
+    stamp: Time,
+    frame_id: String,
+}
+
+#[derive(Serialize, PartialEq)]
+struct Image {
+    header: Header,
+    height: u32,
+    width: u32,
+    encoding: String,
+    is_bigendian: u8,
+    step: u32,
+    data: Vec<u8>,
+}
 
 pub struct GstCoder {
     pipeline: gstreamer::Bin,
@@ -18,7 +42,7 @@ pub struct GstCoder {
 }
 
 impl GstCoder {
-    pub fn new(writer: Box<Writer + Send>, pipeline_description: &Vec<&str>) -> Self {
+    pub fn new(writer: Box<Writer + Send>, pipeline_description: &Vec<&str>, encoder: bool) -> Self {
         println!("Starting pipeline");
         gst::init().unwrap();
 
@@ -39,7 +63,27 @@ impl GstCoder {
                     let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
                     let buffer = sample.get_buffer().unwrap();
                     let map = buffer.map_readable().unwrap();
-                    writer.write(map.as_slice());
+
+                    if(!encoder) {
+                        let msg = Image{
+                            header: Header{
+                                frame_id: "base_link".to_string(),
+                                stamp: Time{sec: 0, nanosec: 0},
+                            },
+                            height: 480,
+                            width: 640,
+                            encoding: "rgb8".to_string(),
+                            is_bigendian: 0,
+                            step: 640*3,
+                            data: map.as_slice().to_vec(),
+                        };
+
+                        let encoded = cdr::serialize::<_, _, CdrLe>(&msg, Infinite).unwrap();
+                        println!("{}", encoded.len());
+                        writer.write(encoded.as_slice());
+                    } else {
+                        writer.write(map.as_slice());
+                    }
                     println!("out");
                     Ok(gst::FlowSuccess::Ok)
                 })
@@ -65,7 +109,7 @@ impl Coder for GstCoder {
         println!("in");
     }
 
-    fn decode(&self, data: Vec<u8>) -> Vec<u8> {
-        data
+    fn decode(&self, data: Vec<u8>) {
+        self.encode(data);
     }
 }
