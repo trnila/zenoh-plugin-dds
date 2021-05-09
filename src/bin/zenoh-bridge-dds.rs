@@ -26,6 +26,7 @@ use std::sync::Arc;
 use zenoh::net::*;
 use zenoh::Properties;
 use zplugin_dds::*;
+use crate::coders::*;
 
 fn parse_args() -> (Properties, String, u32, Option<Regex>) {
     let args = App::new("zenoh bridge for DDS")
@@ -306,7 +307,7 @@ async fn main() {
                             let ton = topic_name.clone();
                             let tyn = type_name.clone();
                             unsafe {
-                                let bs = d.payload.to_vec();
+                                let bs = new_encoder(&type_name).decode(d.payload.to_vec());
                                 // As per the Vec documentation (see https://doc.rust-lang.org/std/vec/struct.Vec.html#method.into_raw_parts)
                                 // the only way to correctly releasing it is to create a vec using from_raw_parts
                                 // and then have its destructor do the cleanup.
