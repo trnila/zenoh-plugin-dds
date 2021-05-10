@@ -1,14 +1,6 @@
-use async_std::task;
-use async_trait::async_trait;
 use gstreamer::prelude::*;
 use gstreamer as gst;
-use gstreamer_video as gst_video;
 use gstreamer_app as gst_app;
-use std::time::{Duration, Instant};
-use gstreamer::gst_element_error as element_error;
-use std::u8;
-use futures::channel::mpsc; 
-use futures::join;
 use crate::coders::{Coder, Writer};
 use serde_derive::{Deserialize, Serialize};
 use cdr::{CdrLe, Infinite};
@@ -37,12 +29,11 @@ struct Image {
 }
 
 pub struct GstCoder {
-    pipeline: gstreamer::Bin,
     src: gst_app::AppSrc,
 }
 
 impl GstCoder {
-    pub fn new(writer: Box<Writer + Send>, pipeline_description: &Vec<&str>, encoder: bool) -> Self {
+    pub fn new(writer: Box<dyn Writer + Send>, pipeline_description: &Vec<&str>, encoder: bool) -> Self {
         println!("Starting pipeline");
         gst::init().unwrap();
 
@@ -54,8 +45,6 @@ impl GstCoder {
         let src = pipeline.get_by_name("src").unwrap().dynamic_cast::<gst_app::AppSrc>().unwrap();
         //        src.set_caps(Some(&video_info.to_caps().unwrap()));
 
-        let (mut tx, mut rx) = mpsc::channel::<gstreamer::Sample>(16);
-
         let sink = pipeline.get_by_name("sink").unwrap().dynamic_cast::<gst_app::AppSink>().unwrap();
         sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
@@ -64,7 +53,7 @@ impl GstCoder {
                     let buffer = sample.get_buffer().unwrap();
                     let map = buffer.map_readable().unwrap();
 
-                    if(!encoder) {
+                    if !encoder {
                         let msg = Image{
                             header: Header{
                                 frame_id: "base_link".to_string(),
@@ -91,7 +80,6 @@ impl GstCoder {
         );
 
         GstCoder {
-            pipeline,
             src,
         }
     }
@@ -104,10 +92,10 @@ impl Coder for GstCoder {
         let mut buffer = gst::Buffer::with_size(decoded.data.len()).unwrap();
         {
             let buffer = buffer.get_mut().unwrap();
-            buffer.copy_from_slice(0, &decoded.data);
+            buffer.copy_from_slice(0, &decoded.data).unwrap();
         }
 
-        self.src.push_buffer(buffer);
+        self.src.push_buffer(buffer).unwrap();
         println!("in encode {}", decoded.data.len());
     }
 
@@ -115,10 +103,10 @@ impl Coder for GstCoder {
         let mut buffer = gst::Buffer::with_size(data.len()).unwrap();
         {
             let buffer = buffer.get_mut().unwrap();
-            buffer.copy_from_slice(0, &data);
+            buffer.copy_from_slice(0, &data).unwrap();
         }
 
-        self.src.push_buffer(buffer);
+        self.src.push_buffer(buffer).unwrap();
         println!("in decode");
     }
 }

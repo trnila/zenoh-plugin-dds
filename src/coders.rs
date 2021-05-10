@@ -1,6 +1,4 @@
-use async_trait::async_trait;
 use zenoh::net::{RBuf, ResKey, Session};
-use std::future::Future;
 use std::str;
 use crate::gst_coder::GstCoder;
 use async_std::task;
@@ -29,7 +27,7 @@ impl ZenohWriter {
 impl Writer for ZenohWriter {
     fn write(&self, buf: &[u8]) {
         task::block_on(async {
-            self.session.write(&self.key, RBuf::from(buf)).await;
+            self.session.write(&self.key, RBuf::from(buf)).await.unwrap();
         });
     }
 }
@@ -76,13 +74,12 @@ impl Writer for DDSWriter {
     }
 }
 
-#[async_trait]
 pub trait Coder {
     fn encode(&self, data: Vec<u8>);
     fn decode(&self, data: Vec<u8>);
 }
 
-pub fn new_encoder(topic_type: &str, writer: Box<Writer + Send>, encoder: bool) -> Box<dyn Coder + Send> {
+pub fn new_encoder(topic_type: &str, writer: Box<dyn Writer + Send>, encoder: bool) -> Box<dyn Coder + Send> {
 
     match topic_type {
         "sensor_msgs::msg::dds_::Image_" => {
@@ -116,7 +113,7 @@ pub fn new_encoder(topic_type: &str, writer: Box<Writer + Send>, encoder: bool) 
 }
 
 struct IdentityCoder {
-    writer: Box<Writer + Send>,
+    writer: Box<dyn Writer + Send>,
 }
 
 impl Coder for IdentityCoder {

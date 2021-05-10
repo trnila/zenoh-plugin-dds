@@ -17,7 +17,6 @@
 pub mod coders;
 pub mod gst_coder;
 
-use async_std::task;
 use cyclors::*;
 use log::debug;
 use std::ffi::{CStr, CString};

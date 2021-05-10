@@ -20,7 +20,6 @@ use futures::prelude::*;
 use log::{debug, info};
 use regex::Regex;
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use zenoh::net::*;
@@ -311,8 +310,6 @@ async fn main() {
                         let decoder = new_encoder(&type_name, Box::new(writer), false);
                         while let Some(d) = stream.next().await {
                             log::trace!("Route data to DDS '{}'", topic_name);
-                            let ton = topic_name.clone();
-                            let tyn = type_name.clone();
                             decoder.decode(d.payload.to_vec());
                         }
                     });
