@@ -85,7 +85,6 @@ pub trait Coder {
 pub fn new_encoder(topic_type: &str, writer: Box<Writer + Send>, encoder: bool) -> Box<dyn Coder + Send> {
 
     match topic_type {
-        "std_msgs::msg::dds_::String_" => Box::new(UpperCoder{writer}),
         "sensor_msgs::msg::dds_::Image_" => {
             let pipe_description = match encoder {
                 true => vec![
@@ -127,21 +126,5 @@ impl Coder for IdentityCoder {
 
     fn decode(&self, data: Vec<u8>) {
         self.writer.write(&data);
-    }
-}
-
-struct UpperCoder {
-    writer: Box<Writer + Send>,
-}
-
-impl Coder for UpperCoder {
-    fn encode(&self, data: Vec<u8>) {
-        self.writer.write(str::from_utf8(&data).unwrap().to_uppercase().as_bytes());
-    }
-
-    fn decode(&self, data: Vec<u8>) {
-        self.writer.write(
-            &str::from_utf8(&data).unwrap().to_lowercase().as_bytes().to_vec()
-        );
     }
 }
