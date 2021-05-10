@@ -1,3 +1,5 @@
+extern crate yaml_rust;
+
 use zenoh::net::{RBuf, ResKey, Session};
 use std::str;
 use crate::gst_coder::GstCoder;
@@ -5,6 +7,9 @@ use async_std::task;
 use std::sync::Arc;
 use std::ffi::CString;
 use cyclors::*;
+use yaml_rust::YamlLoader;
+use std::fs::File;
+use std::io::prelude::*;
 
 
 pub trait Writer {
@@ -38,8 +43,6 @@ pub struct DDSWriter {
     pub tyn: String,
     pub keyless: bool,
     pub wr: i32,
-
-    
 }
 
 impl Writer for DDSWriter {
@@ -74,42 +77,61 @@ impl Writer for DDSWriter {
     }
 }
 
+pub struct Coders {
+    coders: Vec<yaml_rust::Yaml>,  
+}
+
+impl Coders {
+    pub fn new() -> Self {
+        Coders {
+            coders: vec![],
+        }
+    }
+
+    pub fn from_config(config_path: &str) -> Self {
+        let mut file = File::open(config_path).expect("Unable to open file");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).expect("Unable to read file");
+        let docs = YamlLoader::load_from_str(&contents).unwrap();
+
+        Coders {
+            coders: docs[0].as_vec().unwrap().to_vec(),
+        }
+    }
+
+    fn create_coder(&self, topic_name: &str, _type_name: &str, writer: Box<dyn Writer + Send>, encoder: bool) -> Box<dyn Coder + Send> {
+        for pipe in &self.coders {
+            let topics: Vec<&str> = pipe["topics"].as_vec().unwrap().iter().map(|y| y.as_str().unwrap()).collect();
+            let matches = topics.contains(&topic_name);
+
+            if matches {
+                let pipe_description = match encoder {
+                    true => &pipe["encoder"],
+                    false => &pipe["decoder"],
+                }.as_vec().unwrap().iter().map(|y| y.as_str().unwrap()).collect();
+
+                log::error!("[coders] Selected {:?} coder for {}", pipe, topic_name);
+                return Box::new(GstCoder::new(writer, &pipe_description, encoder));
+            }
+
+        }
+        log::error!("[coders] Selected identity coder for {}", topic_name);
+        Box::new(IdentityCoder{writer})
+    }
+
+    pub fn new_decoder(&self, topic_name: &str, type_name: &str, writer: Box<dyn Writer + Send>) -> Box<dyn Coder + Send> {
+        return self.create_coder(topic_name, type_name, writer, false);
+    }
+    pub fn new_encoder(&self, topic_name: &str, type_name: &str, writer: Box<dyn Writer + Send>) -> Box<dyn Coder + Send> {
+        return self.create_coder(topic_name, type_name, writer, true);
+    }
+}
+
+
+
 pub trait Coder {
     fn encode(&self, data: Vec<u8>);
     fn decode(&self, data: Vec<u8>);
-}
-
-pub fn new_encoder(topic_type: &str, writer: Box<dyn Writer + Send>, encoder: bool) -> Box<dyn Coder + Send> {
-
-    match topic_type {
-        "sensor_msgs::msg::dds_::Image_" => {
-            let pipe_description = match encoder {
-                true => vec![
-                        "appsrc name=src format=time is-live=true caps=video/x-raw,width=640,height=480,format=RGB,framerate=15/1",
-                        "queue",
-                        "videoconvert",
-                        "nvvidconv",
-                        "video/x-raw(memory:NVMM),format=(string)I420",
-                        "nvv4l2h264enc insert-sps-pps=1",
-                        "h264parse",
-                        "queue",
-                        "appsink name=sink emit-signals=1"
-                ],
-                false => vec![
-                    "appsrc name=src is-live=true caps=video/x-h264,stream-format=byte-stream,alignment=au",
-                    "queue",
-                    "h264parse",
-                    "avdec_h264",
-                    "videoconvert",
-                    "video/x-raw,format=RGB",
-                    "appsink name=sink emit-signals=1"
-                ],
-            };
-
-            Box::new(GstCoder::new(writer, &pipe_description, encoder))
-        },
-        _ => Box::new(IdentityCoder{writer}),
-    }
 }
 
 struct IdentityCoder {

@@ -1,0 +1,21 @@
+- coder: gstreamer
+  topics:
+        - rt/camera1/color/image_raw
+  encoder:
+        - appsrc name=src format=time is-live=true caps=video/x-raw,width=640,height=480,format=RGB,framerate=15/1
+        - queue
+        - videoconvert
+        - nvvidconv
+        - video/x-raw(memory:NVMM),format=(string)I420
+        - nvv4l2h264enc insert-sps-pps=1
+        - h264parse
+        - queue
+        - appsink name=sink emit-signals=1
+  decoder:
+        - appsrc name=src is-live=true caps=video/x-h264,stream-format=byte-stream,alignment=au
+        - queue
+        - h264parse
+        - avdec_h264
+        - videoconvert
+        - video/x-raw,format=RGB
+        - appsink name=sink emit-signals=1

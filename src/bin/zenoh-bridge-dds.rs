@@ -27,7 +27,7 @@ use zenoh::Properties;
 use zplugin_dds::*;
 use crate::coders::*;
 
-fn parse_args() -> (Properties, String, u32, Option<Regex>) {
+fn parse_args() -> (Properties, String, u32, Option<Regex>, Coders) {
     let args = App::new("zenoh bridge for DDS")
         .arg(Arg::from_usage(
             "-e, --peer=[LOCATOR]...  'Peer locator used to initiate the zenoh session.'\n",
@@ -65,6 +65,11 @@ fn parse_args() -> (Properties, String, u32, Option<Regex>) {
         .arg(
             Arg::from_usage(
                 "-a, --allow=[String] 'The regular expression describing set of /partition/topic-name that should be bridged, everything is forwarded by default.'\n"
+            )
+        )
+        .arg(
+            Arg::from_usage(
+                "--coders-config=[FILE]   'Coders configuration'\n"
             )
         )
         .get_matches();
@@ -127,7 +132,12 @@ fn parse_args() -> (Properties, String, u32, Option<Regex>) {
         DDS_DOMAIN_DEFAULT
     };
 
-    (config, scope, did, allow)
+    let coders = match args.value_of("coders-config") {
+        Some(conf_file) => Coders::from_config(conf_file),
+        None => Coders::new(),
+    };
+
+    (config, scope, did, allow, coders)
 }
 
 fn is_allowed(sre: &Option<Regex>, path: &str) -> bool {
@@ -154,7 +164,7 @@ async fn main() {
 
     const DDS_INFINITE_TIME: i64 = 0x7FFFFFFFFFFFFFFF;
     env_logger::init();
-    let (config, scope, did, allow_re) = parse_args();
+    let (config, scope, did, allow_re, coders) = parse_args();
     let dp = unsafe { dds_create_participant(did, std::ptr::null(), std::ptr::null()) };
     let z = Arc::new(open(config.into()).await.unwrap());
     let (tx, rx): (Sender<MatchedEntity>, Receiver<MatchedEntity>) = channel();
@@ -207,6 +217,7 @@ async fn main() {
                             qos,
                             rid,
                             z.clone(),
+                            &coders,
                         );
                         rd_map.insert(key, dr);
                     }
@@ -297,17 +308,17 @@ async fn main() {
                     };
 
                     let zn = z.clone();
+                    let writer = DDSWriter{
+                       wr, dp, keyless,
+                       ton: topic_name.clone(),
+                       tyn: topic_name.clone(),
+                    };
+                    let decoder = coders.new_decoder(&topic_name, &type_name, Box::new(writer));
                     task::spawn(async move {
                         let rkey = ResKey::RName(key);
                         let mut sub = zn.declare_subscriber(&rkey, &sub_info).await.unwrap();
                         let stream = sub.stream();
 
-                        let writer = DDSWriter{
-                           wr, dp, keyless,
-                           ton: topic_name.clone(),
-                           tyn: topic_name.clone(),
-                        };
-                        let decoder = new_encoder(&type_name, Box::new(writer), false);
                         while let Some(d) = stream.next().await {
                             log::trace!("Route data to DDS '{}'", topic_name);
                             decoder.decode(d.payload.to_vec());

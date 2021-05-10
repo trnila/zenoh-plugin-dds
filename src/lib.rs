@@ -26,7 +26,8 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use zenoh::net::{ResKey, Session};
 
-use crate::coders::{Coder, new_encoder, ZenohWriter};
+use crate::coders::{Coder, Coders, ZenohWriter};
+
 
 
 const MAX_SAMPLES: usize = 32;
@@ -269,9 +270,10 @@ pub fn create_forwarding_dds_reader(
     qos: QosHolder,
     z_key: ResKey,
     z: Arc<Session>,
+    coders: &Coders,
 ) -> dds_entity_t {
     let writer = ZenohWriter::new(z.clone(), z_key.clone());
-    let encoder: Box<dyn Coder> = new_encoder(&type_name, Box::new(writer), true);
+    let encoder: Box<dyn Coder> = coders.new_encoder(&topic_name, &type_name, Box::new(writer));
     let cton = CString::new(topic_name).unwrap().into_raw();
     let ctyn = CString::new(type_name).unwrap().into_raw();
 
