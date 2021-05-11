@@ -45,39 +45,44 @@ impl GstCoder {
         let src = pipeline.get_by_name("src").unwrap().dynamic_cast::<gst_app::AppSrc>().unwrap();
         //        src.set_caps(Some(&video_info.to_caps().unwrap()));
 
-        let sink = pipeline.get_by_name("sink").unwrap().dynamic_cast::<gst_app::AppSink>().unwrap();
-        sink.set_callbacks(
-            gst_app::AppSinkCallbacks::builder()
-                .new_sample(move |appsink| {
-                    let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
-                    let buffer = sample.get_buffer().unwrap();
-                    let map = buffer.map_readable().unwrap();
+        let sink = pipeline.get_by_name("sink");
+        match sink {
+            Some(sink) => { 
+                sink.dynamic_cast::<gst_app::AppSink>().unwrap().set_callbacks(
+                    gst_app::AppSinkCallbacks::builder()
+                        .new_sample(move |appsink| {
+                            let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                            let buffer = sample.get_buffer().unwrap();
+                            let map = buffer.map_readable().unwrap();
 
-                    if !encoder {
-                        let msg = Image{
-                            header: Header{
-                                frame_id: "base_link".to_string(),
-                                stamp: Time{sec: 0, nanosec: 0},
-                            },
-                            height: 480,
-                            width: 640,
-                            encoding: "rgb8".to_string(),
-                            is_bigendian: 0,
-                            step: 640*3,
-                            data: map.as_slice().to_vec(),
-                        };
+                            if !encoder {
+                                let msg = Image{
+                                    header: Header{
+                                        frame_id: "base_link".to_string(),
+                                        stamp: Time{sec: 0, nanosec: 0},
+                                    },
+                                    height: 480,
+                                    width: 640,
+                                    encoding: "rgb8".to_string(),
+                                    is_bigendian: 0,
+                                    step: 640*3,
+                                    data: map.as_slice().to_vec(),
+                                };
 
-                        let encoded = cdr::serialize::<_, _, CdrLe>(&msg, Infinite).unwrap();
-                        println!("{}", encoded.len());
-                        writer.write(encoded.as_slice());
-                    } else {
-                        writer.write(map.as_slice());
-                    }
-                    println!("out");
-                    Ok(gst::FlowSuccess::Ok)
-                })
-                .build()
-        );
+                                let encoded = cdr::serialize::<_, _, CdrLe>(&msg, Infinite).unwrap();
+                                println!("{}", encoded.len());
+                                writer.write(encoded.as_slice());
+                            } else {
+                                writer.write(map.as_slice());
+                            }
+                            println!("out");
+                            Ok(gst::FlowSuccess::Ok)
+                        })
+                        .build()
+                );
+            },
+            None => log::warn!("Sink not found"),
+        }
 
         GstCoder {
             src,
