@@ -1,0 +1,13 @@
+- coder: gstreamer
+  topics:
+        - rt/camera1/color/image_raw
+        - rt/camera2/color/image_raw
+  decoder:
+        - appsrc name=src do-timestamp=1 format=time is-live=true caps=video/x-h264,stream-format=byte-stream,alignment=au
+        - queue
+        - h264parse
+        - avdec_h264
+        - videoconvert
+        - video/x-raw,format=I420
+        - queue
+        - fpsdisplaysink fps-update-interval=1000
